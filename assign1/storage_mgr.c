@@ -76,8 +76,11 @@ RC readBlock (int pageNum, SM_FileHandle *fHandle, SM_PageHandle memPage){
     if (fHandle == NULL){
         THROW(RC_FILE_HANDLE_NOT_INIT,"fHandle is NULL");
     }
-    if (pageNum >= fHandle->totalNumPages || pageNum < 0){
-        THROW(RC_READ_NON_EXISTING_PAGE,"The page do not exist");
+    if (pageNum >= fHandle->totalNumPages){
+        THROW(RC_READ_NON_EXISTING_PAGE,"The page do not exist (Exceeding Total Page Number)");
+    }
+    if (pageNum < 0){
+        THROW(RC_READ_NON_EXISTING_PAGE,"The page do not exist (Negative Page)");
     }
     fseek(fHandle->mgmtInfo.posixFileDescriptor, ACCESSIBLE_PAGE_OFFSET + pageNum * PAGE_SIZE, SEEK_SET);
     fHandle->curPagePos = pageNum;
@@ -90,58 +93,35 @@ int getBlockPos (SM_FileHandle *fHandle){
 }
 
 RC readFirstBlock (SM_FileHandle *fHandle, SM_PageHandle memPage){
-    if (fHandle == NULL){
-        THROW(RC_FILE_HANDLE_NOT_INIT,"fHandle is NULL");
-    }
-    fseek(fHandle->mgmtInfo.posixFileDescriptor, ACCESSIBLE_PAGE_OFFSET, SEEK_SET);
-    fHandle->curPagePos = 0;
-    fread(memPage, PAGE_SIZE, 1, fHandle->mgmtInfo.posixFileDescriptor);
-    return RC_OK;
+    return readBlock(0,fHandle,memPage);
 }
 
 RC readLastBlock (SM_FileHandle *fHandle, SM_PageHandle memPage){
     if (fHandle == NULL){
         THROW(RC_FILE_HANDLE_NOT_INIT,"fHandle is NULL");
     }
-    fseek(fHandle->mgmtInfo.posixFileDescriptor, -PAGE_SIZE, SEEK_END);
-    fHandle->curPagePos = fHandle->totalNumPages -1;
-    fread(memPage, PAGE_SIZE, 1, fHandle->mgmtInfo.posixFileDescriptor);
-    return RC_OK;
+    return readBlock(fHandle->totalNumPages -1, fHandle, memPage);
 }
 
 RC readPreviousBlock (SM_FileHandle *fHandle, SM_PageHandle memPage){
     if (fHandle == NULL){
         THROW(RC_FILE_HANDLE_NOT_INIT,"fHandle is NULL");
     }
-    if (fHandle->curPagePos -1 < 0){
-        THROW(RC_READ_NON_EXISTING_PAGE,"Cannot Read Page Before Page 0");
-    }
-    fseek(fHandle->mgmtInfo.posixFileDescriptor, ACCESSIBLE_PAGE_OFFSET + (fHandle->curPagePos -1) * PAGE_SIZE, SEEK_SET);
-    fHandle->curPagePos--;
-    fread(memPage, PAGE_SIZE, 1, fHandle->mgmtInfo.posixFileDescriptor);
-    return RC_OK;
+    return readBlock(fHandle->curPagePos - 1, fHandle, memPage);
 }
 
 RC readCurrentBlock (SM_FileHandle *fHandle, SM_PageHandle memPage){
     if (fHandle == NULL){
         THROW(RC_FILE_HANDLE_NOT_INIT,"fHandle is NULL");
     }
-    fseek(fHandle->mgmtInfo.posixFileDescriptor, ACCESSIBLE_PAGE_OFFSET + fHandle->curPagePos * PAGE_SIZE, SEEK_SET);
-    fread(memPage, PAGE_SIZE, 1, fHandle->mgmtInfo.posixFileDescriptor);
-    return RC_OK;
+    return readBlock(fHandle->curPagePos, fHandle, memPage);
 }   
 
 RC readNextBlock (SM_FileHandle *fHandle, SM_PageHandle memPage){
     if (fHandle == NULL){
         THROW(RC_FILE_HANDLE_NOT_INIT,"fHandle is NULL");
     }
-    if (fHandle->curPagePos +1 >= fHandle->totalNumPages ){
-        THROW(RC_READ_NON_EXISTING_PAGE,"Cannot Read Page After The Last One");
-    }
-    fseek(fHandle->mgmtInfo.posixFileDescriptor, ACCESSIBLE_PAGE_OFFSET + (fHandle->curPagePos +1) * PAGE_SIZE, SEEK_SET);
-    fHandle->curPagePos++;
-    fread(memPage, PAGE_SIZE, 1, fHandle->mgmtInfo.posixFileDescriptor);
-    return RC_OK;
+    return readBlock(fHandle->curPagePos + 1, fHandle, memPage);
 }
 
 /* writing blocks to a page file */
@@ -162,9 +142,7 @@ RC writeCurrentBlock (SM_FileHandle *fHandle, SM_PageHandle memPage){
     if (fHandle == NULL){
         THROW(RC_FILE_HANDLE_NOT_INIT,"fHandle is NULL");
     }
-    fseek(fHandle->mgmtInfo.posixFileDescriptor, ACCESSIBLE_PAGE_OFFSET + fHandle->curPagePos * PAGE_SIZE, SEEK_SET);
-    fwrite(memPage, PAGE_SIZE, 1, fHandle->mgmtInfo.posixFileDescriptor);
-    return RC_OK;
+    return writeBlock(fHandle->curPagePos, fHandle, memPage);
 }
 
 RC appendEmptyBlock (SM_FileHandle *fHandle){

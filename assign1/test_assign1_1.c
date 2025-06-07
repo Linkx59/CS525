@@ -28,7 +28,7 @@ main (void)
 
   testCreateOpenClose();
   testSinglePageContent();
-  // testMultiplePageContent();
+  // testMultiplePageContent(); // Test added
 
   return 0;
 }
