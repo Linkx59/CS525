@@ -22,11 +22,18 @@ typedef enum ReplacementStrategy {
 typedef int PageNumber;
 #define NO_PAGE -1
 
+typedef struct BM_FrameInfo {
+	PageNumber pageNum;
+	bool isDirty;
+	int fixCount;
+	int *timestamp;
+} BM_FrameInfo;
+
 typedef struct BM_BufferPoolManagementInformation {
 	char *framePool; // Contains the data of pages
-	BM_PageHandle *pageHandlePool; // Contains all the page Handle
-	BM_PageHandle **strategyBuffer; // Queue for FIFO and LRU
-	SM_FileHandle *fileHandle;
+	BM_FrameInfo *frameInfoPool; // Contains all the page Handle
+	BM_FrameInfo **strategyBuffer; // Queue for FIFO and LRU
+	SM_FileHandle fileHandle;
 	int numReadIO;
 	int numWriteIO;
 } BM_BufferPoolManagementInformation;
@@ -42,8 +49,6 @@ typedef struct BM_BufferPool {
 typedef struct BM_PageHandle {
 	PageNumber pageNum;
 	char *data;
-	bool isDirty;
-	int fixCount;
 } BM_PageHandle;
 
 // convenience macros
@@ -54,7 +59,7 @@ typedef struct BM_PageHandle {
 		((BM_PageHandle *) malloc (sizeof(BM_PageHandle)))
 
 // Buffer Manager Interface Pool Handling
-RC initBufferPool(BM_BufferPool * bm, const char *const pageFileName, 
+RC initBufferPool(BM_BufferPool *const bm, char *const pageFileName, 
 		const int numPages, ReplacementStrategy strategy,
 		void *stratData);
 RC shutdownBufferPool(BM_BufferPool *const bm);
@@ -80,6 +85,9 @@ RC evictLRU(BM_BufferPool *const bm, BM_PageHandle *page);
 
 // Utility
 RC readPageFromDisk(BM_BufferPool *const bm, BM_PageHandle *page);
+int getPositionQueue(PageNumber pageNum, BM_FrameInfo **queue, int queue_length); // Return -1 if no match
 void updateQueue(int pos, void **queue, int queue_length); // Remove and add back the object a index pos
+int getFrameIndex(BM_BufferPool *const bm, PageNumber pageNum); // -1 if page not in buffer
+RC forceFrame (BM_BufferPool *const bm, BM_FrameInfo *frameInfo, int frameIndex);
 
 #endif
