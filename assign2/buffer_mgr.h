@@ -26,7 +26,6 @@ typedef struct BM_FrameInfo {
 	PageNumber pageNum;
 	bool isDirty;
 	int fixCount;
-	int *timestamp;
 } BM_FrameInfo;
 
 typedef struct BM_BufferPoolManagementInformation {

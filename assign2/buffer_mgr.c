@@ -15,6 +15,8 @@ RC initBufferPool(BM_BufferPool *const bm, char *const pageFileName,
     // Initializing management Information of the buffer
     RC fileOpenRC = openPageFile(pageFileName,&(bufferMgtData->fileHandle));
     if (fileOpenRC != RC_OK){
+        free(bufferMgtData);
+        bm->mgmtData = NULL;
         THROW(fileOpenRC,"Could not open the page file");
     }
     bufferMgtData->numReadIO = 0;
@@ -39,6 +41,9 @@ RC initBufferPool(BM_BufferPool *const bm, char *const pageFileName,
 }
 
 RC shutdownBufferPool(BM_BufferPool *const bm){
+    if (bm->mgmtData == NULL){
+        THROW(RC_BUFFERPOOL_NOT_INITIALIZED,"Buffer not open");
+    }
     // First check if all page have fixCount = 0
     for (int i = 0; i < bm->numPages; i++){
         if (bm->mgmtData->frameInfoPool[i].fixCount != 0){
@@ -57,6 +62,9 @@ RC shutdownBufferPool(BM_BufferPool *const bm){
 }
 
 RC forceFlushPool(BM_BufferPool *const bm){
+    if (bm->mgmtData == NULL){
+        THROW(RC_BUFFERPOOL_NOT_INITIALIZED,"Buffer not open");
+    }
     for (int i = 0; i < bm->numPages; i++){
         BM_FrameInfo *frameInfo = &(bm->mgmtData->frameInfoPool[i]);
         if (frameInfo->isDirty == TRUE && frameInfo->fixCount == 0){
@@ -70,12 +78,22 @@ RC forceFlushPool(BM_BufferPool *const bm){
 
 // Buffer Manager Interface Access Pages
 RC markDirty (BM_BufferPool *const bm, BM_PageHandle *const page){
-    BM_FrameInfo *frameInfo = &(bm->mgmtData->frameInfoPool[getFrameIndex(bm,page->pageNum)]);
+    if (bm->mgmtData == NULL){
+        THROW(RC_BUFFERPOOL_NOT_INITIALIZED,"Buffer not open");
+    }
+    int frameIndex = getFrameIndex(bm,page->pageNum);
+    if (frameIndex < 0){ // not frame corresponding to the page
+        THROW(RC_FRAME_NOT_FOUND,"No frame corresponding to the page");
+    }
+    BM_FrameInfo *frameInfo = &(bm->mgmtData->frameInfoPool[frameIndex]);
     frameInfo->isDirty = TRUE;
     return RC_OK;
 }
 
 RC unpinPage (BM_BufferPool *const bm, BM_PageHandle *const page){
+    if (bm->mgmtData == NULL){
+        THROW(RC_BUFFERPOOL_NOT_INITIALIZED,"Buffer not open");
+    }
     BM_FrameInfo *frameInfo = &(bm->mgmtData->frameInfoPool[getFrameIndex(bm,page->pageNum)]);
     if (frameInfo->fixCount <= 0){
         THROW(RC_FIX_COUNT_ZERO,"Cannot unpin a page that is not pinned");
@@ -85,12 +103,21 @@ RC unpinPage (BM_BufferPool *const bm, BM_PageHandle *const page){
 }
 
 RC forcePage (BM_BufferPool *const bm, BM_PageHandle *const page){
+    if (bm->mgmtData == NULL){
+        THROW(RC_BUFFERPOOL_NOT_INITIALIZED,"Buffer not open");
+    }
     int frameIndex = getFrameIndex(bm,page->pageNum);
+    if (frameIndex < 0){ // not frame corresponding to the page
+        THROW(RC_FRAME_NOT_FOUND,"No frame corresponding to the page");
+    }
     BM_FrameInfo *frameInfo = &(bm->mgmtData->frameInfoPool[frameIndex]);
     return forceFrame(bm, frameInfo, frameIndex);
 }
 
 RC pinPage (BM_BufferPool *const bm, BM_PageHandle *const page, const PageNumber pageNum){
+    if (bm->mgmtData == NULL){
+        THROW(RC_BUFFERPOOL_NOT_INITIALIZED,"Buffer not open");
+    }
     // First we check if the page is already buffered
     page->pageNum = pageNum;
     int frameIndex = getFrameIndex(bm,pageNum);
@@ -111,24 +138,24 @@ RC pinPage (BM_BufferPool *const bm, BM_PageHandle *const page, const PageNumber
     for (int i = 0; i < bm->numPages; i++){
         BM_FrameInfo *frameInfo = &(bm->mgmtData->frameInfoPool[i]);
         if (frameInfo->pageNum == NO_PAGE){
+            page->data = &(bm->mgmtData->framePool[i * PAGE_SIZE]);
+            RC result = readPageFromDisk(bm,page);
+            if (result != RC_OK){
+                return result;
+            }
             frameInfo->pageNum = pageNum;
             frameInfo->fixCount = 1;
-            page->data = &(bm->mgmtData->framePool[i * PAGE_SIZE]);
-            return readPageFromDisk(bm,page);
+            return RC_OK;
         }
     }
     
     // No empty frame, we need to evict a page from the buffer
-    RC evictResult;
     if (bm->strategy == RS_FIFO){
-        evictResult = evictFIFO(bm, page);
+        return evictFIFO(bm, page);
     } else if (bm->strategy == RS_LRU){
-        evictResult = evictLRU(bm, page);
+        return evictLRU(bm, page);
     }
-    if (evictResult != RC_OK){
-        return evictResult;
-    }
-    return readPageFromDisk(bm,page);
+    THROW(RC_STRATEGY_NOT_IMPLEMENTED,"Unknown Strategy , can't evict");
 }
 
 // Statistics Interface
@@ -177,9 +204,13 @@ RC evictFIFO(BM_BufferPool *const bm, BM_PageHandle *page){
                 forceFrame(bm, frameInfo, frameIndex);
                 frameInfo->isDirty = FALSE;
             }
+            page->data = &(bm->mgmtData->framePool[frameIndex*PAGE_SIZE]);
+            RC result = readPageFromDisk(bm,page);
+            if (result != RC_OK){
+                return result;
+            }
             frameInfo->pageNum = page->pageNum;
             frameInfo->fixCount = 1;
-            page->data = &(bm->mgmtData->framePool[frameIndex*PAGE_SIZE]);
             updateQueue(i, (void **) strategyBuffer, bm->numPages);
             return RC_OK;
         }
@@ -199,9 +230,13 @@ RC evictLRU(BM_BufferPool *const bm, BM_PageHandle *page){
                 forceFrame(bm, frameInfo, frameIndex);
                 frameInfo->isDirty = FALSE;
             }
+            page->data = &(bm->mgmtData->framePool[frameIndex*PAGE_SIZE]);
+            RC result = readPageFromDisk(bm,page);
+            if (result != RC_OK){
+                return result;
+            }
             frameInfo->pageNum = page->pageNum;
             frameInfo->fixCount = 1;
-            page->data = &(bm->mgmtData->framePool[frameIndex*PAGE_SIZE]);
             updateQueue(i, (void **) strategyBuffer, bm->numPages);
             return RC_OK;
         }

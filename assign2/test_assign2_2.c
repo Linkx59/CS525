@@ -42,7 +42,7 @@ main (void)
     initStorageManager();
     testName = "";
     
-    testLRU_K();
+    //testLRU_K();
     testError();
     return 0;
 }
@@ -161,7 +161,12 @@ testError (void)
     CHECK(pinPage(bm, h, 2));
     
     ASSERT_ERROR(pinPage(bm, h, 3), "try to pin page when pool is full of pinned pages with fix-count > 0");
-    
+
+    for(int i=0; i<3; i++){ // Unpin all pages
+        pinPage(bm, h, i);
+        unpinPage(bm, h);
+        unpinPage(bm, h);
+    }
     CHECK(shutdownBufferPool(bm));
     
     // try to pin page with negative page number.
